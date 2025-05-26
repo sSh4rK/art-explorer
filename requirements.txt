@@ -1,0 +1,6 @@
+Flask==3.0.2
+requests==2.31.0
+python-dotenv==1.0.1
+pytest==8.0.0
+coverage==7.4.1
+waitress==3.0.0 
