@@ -5,6 +5,7 @@ pipeline {
 
     environment {
         PORT = '5000'
+        CONTAINER_NAME = 'art_explorer'
     }
 
     stages {
@@ -35,14 +36,29 @@ pipeline {
         stage('Run Application') {
             steps {
                 script {
-                    // Supprimer l'ancien conteneur s'il existe
-                    sh 'docker rm -f art_explorer || true'
+                    // Stop any container with same name
+                    sh 'docker rm -f $CONTAINER_NAME || true'
 
-                    // Libérer le port si déjà utilisé (nécessite `psmisc` pour fuser)
-                    sh 'fuser -k ${PORT}/tcp || true'
+                    // Kill any process using the port (host level)
+                    sh '''
+                        echo ">> Checking if port $PORT is in use"
+                        if lsof -i :$PORT; then
+                          echo ">> Port $PORT in use, killing process..."
+                          fuser -k ${PORT}/tcp || true
+                          sleep 2
+                        fi
+                    '''
 
-                    // Lancer l’application dans un conteneur détaché
-                    sh 'docker run -d -p ${PORT}:5000 --name art_explorer art_explorer'
+                    // Wait until the port is really free
+                    sh '''
+                        echo ">> Waiting for port $PORT to be free..."
+                        while lsof -i :$PORT >/dev/null; do
+                          sleep 1
+                        done
+                    '''
+
+                    // Run the container
+                    sh 'docker run -d -p $PORT:5000 --name $CONTAINER_NAME art_explorer'
                 }
             }
         }
