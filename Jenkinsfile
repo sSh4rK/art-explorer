@@ -4,8 +4,9 @@ pipeline {
     }
 
     environment {
-        PORT = '5000'
+        DOCKER_IMAGE = 'art_explorer'
         CONTAINER_NAME = 'art_explorer'
+        APP_PORT = '5000'
     }
 
     stages {
@@ -17,48 +18,61 @@ pipeline {
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t art_explorer .'
+                sh 'docker build -t $DOCKER_IMAGE .'
             }
         }
 
         stage('Run Unit Tests') {
             steps {
-                sh 'docker run --rm art_explorer python -m pytest tests'
+                sh 'docker run --rm $DOCKER_IMAGE python -m pytest tests'
             }
         }
 
         stage('Run Unit Tests with Coverage') {
             steps {
-                sh 'docker run --rm art_explorer sh -c "coverage run -m pytest && coverage report"'
+                sh '''
+                    docker run --rm $DOCKER_IMAGE sh -c "coverage run -m pytest && coverage report"
+                '''
             }
         }
 
         stage('Run Application') {
             steps {
                 script {
-                    // Stop any container with same name
+                    // Supprimer le conteneur si existant
                     sh 'docker rm -f $CONTAINER_NAME || true'
 
-                    // Kill any process using the port (host level)
+                    // Tuer le processus si le port est occupé
                     sh '''
-                        echo ">> Checking if port $PORT is in use"
-                        if lsof -i :$PORT; then
-                          echo ">> Port $PORT in use, killing process..."
-                          fuser -k ${PORT}/tcp || true
+                        echo ">> Vérification du port $APP_PORT"
+                        PID=$(lsof -ti tcp:$APP_PORT)
+                        if [ ! -z "$PID" ]; then
+                          echo ">> Port $APP_PORT utilisé par PID: $PID. Suppression..."
+                          kill -9 $PID || true
                           sleep 2
+                        else
+                          echo ">> Port $APP_PORT libre."
                         fi
                     '''
 
-                    // Wait until the port is really free
+                    // Boucle d’attente jusqu’à libération du port
                     sh '''
-                        echo ">> Waiting for port $PORT to be free..."
-                        while lsof -i :$PORT >/dev/null; do
+                        echo ">> Attente que le port $APP_PORT soit libre..."
+                        while lsof -i :$APP_PORT >/dev/null; do
+                          echo ">> En attente..."
                           sleep 1
                         done
                     '''
 
-                    // Run the container
-                    sh 'docker run -d -p $PORT:5000 --name $CONTAINER_NAME art_explorer'
+                    // Lancer le conteneur
+                    sh 'docker run -d -p $APP_PORT:$APP_PORT --name $CONTAINER_NAME $DOCKER_IMAGE'
+
+                    // (Optionnel) Vérifie que l’app répond
+                    sh '''
+                        echo ">> Vérification que l’application est en ligne..."
+                        sleep 3
+                        curl -f http://localhost:$APP_PORT || (echo ">> Erreur : l’application ne répond pas." && exit 1)
+                    '''
                 }
             }
         }
