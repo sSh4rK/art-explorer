@@ -1,6 +1,6 @@
 pipeline {
     agent {
-        label 'vagrant' // Ou 'Debian' selon ton agent
+        label 'Debian'
     }
 
     environment {
