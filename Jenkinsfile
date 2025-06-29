@@ -1,9 +1,14 @@
 pipeline {
-    agent any
+    agent {
+        label 'vagrant' // ou tout autre label lié à ton agent Jenkins (machine avec Docker installé)
+    }
+
+    parameters {
+        string(name: 'PORT', defaultValue: '5000', description: "Port pour l'application")
+    }
 
     environment {
-        DOCKER_HUB_USER = 'ssh4rk'
-        IMAGE_NAME = 'art-explorer'
+        DOCKER_IMAGE = 'ssh4rk/art-explorer'
         DISCORD_WEBHOOK = credentials('discord-webhook')
     }
 
@@ -16,34 +21,68 @@ pipeline {
 
         stage('Build de l’image Docker') {
             steps {
-                sh 'docker build -t $DOCKER_HUB_USER/$IMAGE_NAME:latest .'
+                script {
+                    sh 'sudo docker build . -t $DOCKER_IMAGE:latest'
+                }
             }
-        }
-
-        stage('Push sur Docker Hub') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
-                    sh 'echo "$PASS" | docker login -u "$USER" --password-stdin'
-                    sh 'docker push $DOCKER_HUB_USER/$IMAGE_NAME:latest'
+            post {
+                failure {
+                    script {
+                        sh """
+                        curl -X POST -H "Content-Type: application/json" \
+                        -d '{"content": "❌ Échec de la phase de build Docker !"}' \
+                        "$DISCORD_WEBHOOK"
+                        """
+                    }
                 }
             }
         }
 
-        stage('Déploiement local') {
+        stage('Tests unitaires') {
             steps {
-                sh 'docker rm -f art-explorer || true'
-                sh 'docker run -d --name art-explorer -p 5000:5000 $DOCKER_HUB_USER/$IMAGE_NAME:latest'
+                script {
+                    sh 'sudo docker run --entrypoint=ash $DOCKER_IMAGE:latest -c "python -m pytest tests"'
+                }
+            }
+        }
+
+        stage('Tests avec coverage') {
+            steps {
+                script {
+                    sh 'sudo docker run --entrypoint=ash $DOCKER_IMAGE:latest -c "coverage run -m pytest && coverage report"'
+                }
+            }
+        }
+
+        stage('Déploiement') {
+            steps {
+                script {
+                    sh 'sudo docker rm -f art-explorer || true'
+                    sh "sudo docker run -d -p ${params.PORT}:5000 --name art-explorer $DOCKER_IMAGE:latest"
+                }
             }
         }
     }
 
     post {
+        success {
+            script {
+                sh """
+                curl -X POST -H "Content-Type: application/json" \
+                -d '{"content": "✅ Déploiement réussi de Art Explorer sur le port ${params.PORT} !"}' \
+                "$DISCORD_WEBHOOK"
+                """
+            }
+        }
         failure {
-            sh '''
-            curl -X POST -H "Content-Type: application/json" \
-            -d '{"content":"❌ Le pipeline Jenkins a échoué !"}' \
-            $DISCORD_WEBHOOK
-            '''
+            script {
+                sh """
+                curl -X POST -H "Content-Type: application/json" \
+                -d '{"content": "🔥 Le pipeline a échoué à un moment donné."}' \
+                "$DISCORD_WEBHOOK"
+                """
+            }
         }
     }
 }
+s
