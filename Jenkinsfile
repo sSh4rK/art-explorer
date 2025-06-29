@@ -1,16 +1,16 @@
 pipeline {
-    agent { label 'Debian' } // adapte ce label à celui de ton agent
+    agent {
+        label 'vagrant' // Ou 'Debian' selon ton agent
+    }
 
-    parameters {
-        string(name: 'PORT', defaultValue: '5000', description: 'Port pour l’application')
+    environment {
+        PORT = '5000'
     }
 
     stages {
         stage('Checkout') {
             steps {
-                checkout([$class: 'GitSCM',
-                    branches: [[name: 'refs/heads/main']],
-                    userRemoteConfigs: [[url: 'https://github.com/sSh4rK/art-explorer.git']]])
+                checkout scm
             }
         }
 
@@ -35,8 +35,14 @@ pipeline {
         stage('Run Application') {
             steps {
                 script {
-                    sh 'docker rm -f art_explorer || true' // supprime le conteneur si il existe
-                    sh "docker run -d -p ${params.PORT}:5000 --name art_explorer art_explorer"
+                    // Supprimer l'ancien conteneur s'il existe
+                    sh 'docker rm -f art_explorer || true'
+
+                    // Libérer le port si déjà utilisé (nécessite `psmisc` pour fuser)
+                    sh 'fuser -k ${PORT}/tcp || true'
+
+                    // Lancer l’application dans un conteneur détaché
+                    sh 'docker run -d -p ${PORT}:5000 --name art_explorer art_explorer'
                 }
             }
         }
