@@ -55,14 +55,19 @@ pipeline {
         }
 
         stage('Déploiement') {
-            steps {
-                script {
-                    sh 'sudo docker rm -f art-explorer || true'
-                    sh "sudo docker run -d -p ${params.PORT}:5000 --name art-explorer $DOCKER_IMAGE:latest"
-                }
-            }
+    steps {
+        sshagent(['ssh-key-vm']) {
+            sh """
+            ssh user@vm.example.com '
+                docker rm -f art-explorer || true &&
+                docker pull $DOCKER_IMAGE:latest &&
+                docker run -d -p ${params.PORT}:5000 --name art-explorer $DOCKER_IMAGE:latest
+            '
+            """
         }
     }
+}
+
 
     post {
         success {
